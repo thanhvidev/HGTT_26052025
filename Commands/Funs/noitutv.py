@@ -510,4 +510,3 @@ class Noitutv(commands.Cog):
     @wrong_checker.before_loop
     async def before_wrong_checker(self):
         await self.client.wait_until_ready()
-
