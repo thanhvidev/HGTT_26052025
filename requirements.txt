@@ -1,0 +1,12 @@
+easy_pil
+discord
+flask
+pillow
+ffmpeg
+discord_interactions
+requests
+pytz
+gtts
+instagram_private_api
+azure-cognitiveservices-speech
+aiosqlite
