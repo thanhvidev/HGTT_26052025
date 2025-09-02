@@ -1,29 +1,10 @@
 import asyncio
 import discord
 import random
-import aiosqlite
+from services.economy_repo import is_registered, get_balance, add_balance
 from discord.ext import commands
 
-# --- Phần kết nối SQLite với aiosqlite ---
-async def get_database_connection():
-    conn = await aiosqlite.connect('economy.db')
-    await conn.execute('PRAGMA journal_mode=WAL;')
-    return conn
-
-async def is_registered(user_id):
-    conn = await get_database_connection()
-    async with conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cursor:
-        result = await cursor.fetchone()
-    await conn.close()
-    return result is not None
-
-async def update_balance(user_id, amount):
-    """Cập nhật balance của người chơi."""
-    conn = await get_database_connection()
-    await conn.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
-    await conn.commit()
-    await conn.close()
-
+# Sử dụng repository để thao tác DB theo từng server
 # Bảng roulette: gồm các số từ 0 đến 36 và các màu tương ứng
 ROULETTE = {
     0: "🟢", 1: "🔴", 2: "⚫️", 3: "🔴", 4: "⚫️", 5: "🔴", 6: "⚫️",
@@ -52,17 +33,14 @@ class Roulette(commands.Cog):
         """
         user_id = ctx.author.id
 
-        # Kiểm tra đăng ký và số dư
-        if not await is_registered(user_id):
+        # Kiểm tra đăng ký và số dư theo từng guild
+        guild_id = ctx.guild.id
+        if not await is_registered(guild_id, user_id):
             return await ctx.send("Bạn chưa đăng ký tài khoản.")
         if bet_amount <= 0:
             return await ctx.send("Số tiền cược phải lớn hơn 0.")
 
-        conn = await get_database_connection()
-        async with conn.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)) as cursor:
-            row = await cursor.fetchone()
-        await conn.close()
-        balance = row[0] if row else 0
+        balance = await get_balance(guild_id, user_id) or 0
         if bet_amount > balance:
             return await ctx.send("Bạn không đủ tiền để cược số tiền này.")
 
@@ -87,8 +65,8 @@ class Roulette(commands.Cog):
         elif bet == "dozen2" and 13 <= result_num <= 24: win, payout = True, bet_amount*3
         elif bet == "dozen3" and 25 <= result_num <= 36: win, payout = True, bet_amount*3
 
-        # Cập nhật balance
-        await update_balance(user_id, (payout - bet_amount) if win else -bet_amount)
+        # Cập nhật balance theo guild
+        await add_balance(guild_id, user_id, (payout - bet_amount) if win else -bet_amount)
 
         # Tạo embed kết quả
         embed = discord.Embed(title="Kết quả Roulette", color=discord.Color.blue())

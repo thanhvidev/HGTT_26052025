@@ -5,7 +5,7 @@ import asyncio
 import time as pyTime
 import time
 import random
-import sqlite3
+# import sqlite3  # migrated to per-guild db (aiosqlite)
 import config
 import json
 import os
@@ -13,13 +13,14 @@ from discord import File
 
 rolehost = config.ROLE_HOST
 
-conn = sqlite3.connect('giveaways.db')
-c = conn.cursor()
-
-# Tạo bảng để lưu trữ thông tin giveaway
-c.execute('''CREATE TABLE IF NOT EXISTS giveaways
-             (id INTEGER PRIMARY KEY, time INTEGER, prize TEXT, message INTEGER, participants TEXT, winners INTEGER, finished BOOL, host INTEGER, win INTEGER)''')
-conn.commit()
+from services.giveaway_repo import (
+    ensure_guild as ensure_giveaway_guild,
+    create_giveaway,
+    get_giveaway,
+    update_participants,
+    end_giveaway,
+    clean_finished,
+)
 
 gacanhtrai = "<a:canhtrai_ga:1296345003697766400>"
 gacanhphai = "<a:canhphai_ga:1296345015978557492>"
@@ -145,8 +146,7 @@ class Giveaway(commands.Cog):
             return
         # Tiếp tục phần còn lại của code nếu user không nằm trong danh sách cấm
         channel = reaction.message.channel
-        c.execute("SELECT * FROM giveaways WHERE message = ?", (reaction.message.id,))
-        data = c.fetchone()
+        data = await get_giveaway(reaction.message.guild.id, reaction.message.id)
         guild = self.client.get_guild(1090136467541590066)
         ganoel2 = await guild.fetch_emoji(1339794180372824095)
         if data is None:
@@ -159,17 +159,14 @@ class Giveaway(commands.Cog):
             participants = list(filter(lambda p: p != "[]", data[4].split(" ")))
             if str(user.id) not in participants:
                 participants.append(str(user.id))
-                c.execute("UPDATE giveaways SET participants = ? WHERE message = ?", (" ".join(participants), reaction.message.id))
-                conn.commit()
+                await update_participants(reaction.message.guild.id, reaction.message.id, " ".join(participants))
 
     @commands.Cog.listener()
     async def on_reaction_remove(self, reaction, user):
         if user.bot:
             return
         channel = reaction.message.channel
-        c.execute("SELECT * FROM giveaways WHERE message = ?",
-                  (reaction.message.id,))
-        data = c.fetchone()
+        data = await get_giveaway(reaction.message.guild.id, reaction.message.id)
         guild = self.client.get_guild(1090136467541590066)
         ganoel2 = await guild.fetch_emoji(1339794180372824095)
         if data is None:
@@ -188,9 +185,7 @@ class Giveaway(commands.Cog):
                     c.execute("UPDATE giveaways SET participants = ? WHERE message = ?", (" ".join(
                         participants), reaction.message.id))
                 else:
-                    c.execute(
-                        "UPDATE giveaways SET participants = ? WHERE message = ?", ("[]", reaction.message.id))
-                conn.commit()
+                    await update_participants(reaction.message.guild.id, reaction.message.id, "[]")
 
     @commands.hybrid_command(aliases=["gstart", "ga"],  description="Tạo give away")
     async def giveaway(self, ctx, time=None, winners: str = None, *, prize: str = None):
@@ -241,12 +236,9 @@ class Giveaway(commands.Cog):
             except discord.NotFound:
                 # Nếu không tìm thấy tin nhắn để xóa, không làm gì cả
                 pass
-            c.execute("INSERT INTO giveaways VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (None, int(
-                time + end_time), prize, msg.id, "[]", "[]", False, ctx.author.id, winners))
-            conn.commit()
+            await create_giveaway(ctx.guild.id, int(time + end_time), prize, msg.id, ctx.author.id, winners)
             await asyncio.sleep(time)
-            c.execute("SELECT * FROM giveaways WHERE message = ?", (msg.id,))
-            data = c.fetchone()
+            data = await get_giveaway(ctx.guild.id, msg.id)
             if data[4] == "[]":
                 embed = discord.Embed(
                     title=f"**{prize}**", description=f"{gatim} Ends:  <t:{data[1]}:R>\n{gatim} Winners: 0 \n{gatim} Hosted by: {ctx.author.mention}", color=discord.Color.from_rgb(255, 131, 223))
@@ -317,9 +309,7 @@ class Giveaway(commands.Cog):
                             #         file=file
                             #     )
                             winners_strs = ' '.join(map(str, winners))
-                            c.execute(
-                                "UPDATE giveaways SET finished = ?, winners = ? WHERE message = ?", (True, winners_strs, msg.id))
-                            conn.commit()
+                            await end_giveaway(ctx.guild.id, msg.id, winners_strs)
                         else:
                             embed = discord.Embed(
                                 title=f"**{prize}**", description=f"{gatim} Ends:  <t:{data[1]}:R>\n{gatim} Winners: 0 \n{gatim} Hosted by: {ctx.author.mention}", color=discord.Color.from_rgb(255, 131, 223))
@@ -337,9 +327,7 @@ class Giveaway(commands.Cog):
                             embed1 = discord.Embed(
                                 description=f"Số lượng người tham gia không đủ", color=discord.Color.from_rgb(255, 131, 223))
                             await msg.reply(embed=embed1)
-                            c.execute(
-                                "UPDATE giveaways SET finished = ? WHERE message = ?", (True, msg.id))
-                            conn.commit()
+                            await end_giveaway(ctx.guild.id, msg.id, "")
         else:
             await ctx.reply("winners phải kết thúc bằng chữ 'w'.")
 
