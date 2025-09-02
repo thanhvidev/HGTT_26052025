@@ -8,7 +8,7 @@ import sys
 import config
 import json
 import asyncio
-import sqlite3
+import sqlite3  # legacy (avoid direct use)
 from discord_interactions import *
 from Commands.Check.avatar import Avatar
 from Commands.Check.banner import Banner
@@ -61,7 +61,7 @@ from Economy.Relax.dhbc import Dhbc
 from Economy.Relax.drop import DropPickup
 from Economy.Relax.lamtoannhanh import Lamtoan
 from Economy.Relax.vuatiengviet import Vtv
-from Economy.economy import Economy
+from Economy.economy_multi import Economy
 from Economy.shop import Shop
 from Events.Fishing.eventfish import EventFish
 from Events.Fishing.fishingshop import Fishingshop
@@ -77,8 +77,7 @@ from Events.ve import Ve
 from Events.velenh import Velenh
 from Events.Valentine_2025.unbox import Valentine2025
 
-conn = sqlite3.connect('economy.db')
-cursor = conn.cursor()
+from db import DB
 
 
 def prefix_default(client, message):
@@ -143,9 +142,8 @@ async def on_ready():
     await client.wait_until_ready()  # thay vì client.fetch_guilds()
     print('Đã đăng nhập thành công với tên là {0.user}'.format(client))
     for guild in client.guilds:
-        cursor.execute(
-            'INSERT OR IGNORE INTO servers (server_id, server_name, channel_simsimi) VALUES (?, ?, ?)', (guild.id, guild.name, None))
-    conn.commit()
+        await DB.ensure_users_schema(guild.id)
+        await DB.ensure_giveaways_schema(guild.id)
     await client.change_presence(activity=discord.Streaming(name="𝗛𝗮̣𝘁 𝗚𝗶𝗼̂́𝗻𝗴 𝗧𝗮̂𝗺 𝗧𝗵𝗮̂̀𝗻", url="https://www.twitch.tv/thanhvidev"))
     # -------------------Commands/Check==-----------------#
     #await client.add_cog(Avatar(client))
